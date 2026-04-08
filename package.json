@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "start": "bun index.ts",
-    "dev": "bun --watch index.ts"
+    "dev": "bun --watch index.ts",
+    "create-admin": "bun scripts/create-admin.ts"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",

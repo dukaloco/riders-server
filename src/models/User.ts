@@ -61,6 +61,8 @@ export interface IUser extends Document {
     lastName: string;
     phone: string;
     email?: string;
+    /** Login handle for admin accounts (optional; use with email for /admin/login). */
+    username?: string;
     password?: string;
     avatar?: string;
     role: "rider" | "customer" | "admin";
@@ -164,6 +166,7 @@ const UserSchema = new Schema<IUser>(
         lastName:  { type: String, required: false, default: '', trim: true },
         phone: { type: String, required: true, unique: true, trim: true, index: true },
         email: { type: String, sparse: true, lowercase: true, trim: true },
+        username: { type: String, sparse: true, unique: true, lowercase: true, trim: true },
         password: { type: String, minlength: 6 },
         avatar: { type: String },
         role: {

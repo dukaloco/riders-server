@@ -108,6 +108,43 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
         }
     )
 
+    // ─── Admin login (email or username + password) ───────────────────────────
+
+    .post(
+        "/admin/login",
+        async ({ body }) => {
+            console.log('body',body);
+            const identifier = body.identifier.trim().toLowerCase();
+            if (!identifier) throw new UnauthorizedError("Invalid credentials.");
+
+            const user = await User.findOne({
+                role: "admin",
+                isActive: true,
+                $or: [{ email: identifier }, { username: identifier }],
+            });
+
+            if (!user?.password) {
+                throw new UnauthorizedError("Invalid credentials.");
+            }
+
+            const isMatch = await user.comparePassword(body.password);
+            if (!isMatch) throw new UnauthorizedError("Invalid credentials.");
+
+            const token = AuthService.issueToken(user);
+            return {
+                success: true,
+                message: "Login successful",
+                data: { user: user.toPublicJSON(), accessToken: token },
+            };
+        },
+        {
+            body: t.Object({
+                identifier: t.String({ minLength: 1, maxLength: 200 }),
+                password:   t.String({ minLength: 1, maxLength: 100 }),
+            }),
+        }
+    )
+
     // ─── Shared OTP verification (login + registration) ───────────────────────
 
     .post(
