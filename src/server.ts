@@ -10,6 +10,7 @@ import { AppError } from "./utils/errors";
 import { rateLimitPlugin } from "./middleware/rate-limit.middleware";
 
 // Routes & Plugins
+import { adminRoutes } from "./routes/admin.routes";
 import { authRoutes } from "./routes/auth.routes";
 import { profileRoutes } from "./routes/profile.routes";
 import { riderRoutes } from "./routes/rider.routes";
@@ -92,6 +93,7 @@ const app = new Elysia({ serve: { maxRequestBodySize: 10 * 1024 * 1024 } }) // 1
     .use(profileRoutes)
     .use(riderRoutes)
     .use(tripRoutes)
+    .use(adminRoutes)
 
     // ─── Global error handler ─────────────────────────────────────────────────
     // IMPORTANT: Return plain objects (not JSON.stringify strings).
