@@ -40,6 +40,7 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
             newRidersYesterday,
             pendingKycCount,
             urgentKycDocs,
+            recentKycDocs,
             activeRidesCount,
             todayRevenue,
             yesterdayRevenue,
@@ -77,6 +78,16 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
                 .select("firstName lastName phone updatedAt")
                 .sort({ updatedAt: 1 })
                 .limit(20)
+                .lean(),
+
+            // 5 most recently updated submitted applications (any status)
+            User.find({
+                role: "rider",
+                "riderProfile.applicationSubmitted": true,
+            })
+                .select("firstName lastName phone riderProfile.documents riderProfile.isApproved updatedAt")
+                .sort({ updatedAt: -1 })
+                .limit(5)
                 .lean(),
 
             // Active rides: accepted / picked-up / in-transit
@@ -129,6 +140,15 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
             ? (todayRevenueAmt > 0 ? 100 : 0)
             : Math.round(((todayRevenueAmt - yesterdayRevenueAmt) / yesterdayRevenueAmt) * 100);
 
+        const recentKyc = recentKycDocs.map((u) => ({
+            id:            u._id,
+            name:          `${u.firstName} ${u.lastName}`.trim() || "Unknown",
+            phone:         u.phone,
+            documentCount: u.riderProfile?.documents?.length ?? 0,
+            status:        (u.riderProfile?.isApproved ? "approved" : "pending") as "approved" | "pending",
+            updatedAt:     u.updatedAt,
+        }));
+
         const urgentApplications = urgentKycDocs.map((u) => ({
             id:           u._id,
             name:         `${u.firstName} ${u.lastName}`.trim() || "Unknown",
@@ -153,6 +173,7 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
                     pending:      pendingKycCount,
                     urgentCount:  urgentApplications.length,
                     urgent:       urgentApplications,
+                    recent:       recentKyc,
                 },
                 activeRides: {
                     count: activeRidesCount,
