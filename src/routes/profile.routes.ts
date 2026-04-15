@@ -191,7 +191,10 @@ export const profileRoutes = new Elysia({ prefix: "/api/profile" })
 
         const dbUser = await User.findByIdAndUpdate(
             user!.id,
-            { $set: { "riderProfile.applicationSubmitted": true } },
+            {
+                $set:   { "riderProfile.applicationSubmitted": true },
+                $unset: { "riderProfile.kycRejectionReason": "" },
+            },
             { new: true }
         ).select("-password");
 
