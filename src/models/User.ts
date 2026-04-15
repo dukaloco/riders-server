@@ -2,7 +2,7 @@ import mongoose, { type Document, Schema } from "mongoose";
 import bcrypt from "bcryptjs";
 import type { RiderStatus } from "../types";
 
-// ─── Interfaces ───────────────────────────────────────────────────────────────
+//  Interfaces
 
 export interface IVehicle {
     plateNumber: string;
@@ -41,6 +41,7 @@ export interface IRiderProfile {
     totalEarnings: number;
     isVerified: boolean;
     isApproved: boolean;
+    kycRejectionReason?: string;
     currentStatus: RiderStatus;
     lastLocation?: {
         type: "Point";
@@ -142,6 +143,7 @@ const RiderProfileSchema = new Schema<IRiderProfile>(
         totalEarnings: { type: Number, default: 0 },
         isVerified: { type: Boolean, default: false },
         isApproved: { type: Boolean, default: false },
+        kycRejectionReason: { type: String },
         currentStatus: {
             type: String,
             enum: ["offline", "online", "on_trip"],

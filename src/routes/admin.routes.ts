@@ -41,10 +41,15 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
             role: "rider",
             "riderProfile.applicationSubmitted": true,
         };
-        if (status === "pending")  statusFilter["riderProfile.isApproved"] = false;
-        if (status === "approved") statusFilter["riderProfile.isApproved"] = true;
-        // "rejected" not yet tracked in the model — returns empty intentionally
-        if (status === "rejected") statusFilter["_id"] = { $exists: false };
+        if (status === "approved") {
+            statusFilter["riderProfile.isApproved"] = true;
+        } else if (status === "rejected") {
+            statusFilter["riderProfile.isApproved"] = false;
+            statusFilter["riderProfile.kycRejectionReason"] = { $exists: true, $ne: "" };
+        } else if (status === "pending") {
+            statusFilter["riderProfile.isApproved"] = false;
+            statusFilter["riderProfile.kycRejectionReason"] = { $exists: false };
+        }
 
         // Add name/phone search
         const searchFilter = search
@@ -57,16 +62,17 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
 
         const baseSubmitted = { role: "rider", "riderProfile.applicationSubmitted": true };
 
-        const [applications, total, pendingCount, approvedCount, allCount] = await Promise.all([
+        const [applications, total, pendingCount, approvedCount, rejectedCount, allCount] = await Promise.all([
             User.find(searchFilter)
-                .select("firstName lastName phone riderProfile.documents riderProfile.isApproved updatedAt")
+                .select("firstName lastName phone riderProfile.documents riderProfile.isApproved riderProfile.kycRejectionReason updatedAt")
                 .sort({ updatedAt: -1 })
                 .skip(skip)
                 .limit(limit)
                 .lean(),
             User.countDocuments(searchFilter),
-            User.countDocuments({ ...baseSubmitted, "riderProfile.isApproved": false }),
+            User.countDocuments({ ...baseSubmitted, "riderProfile.isApproved": false, "riderProfile.kycRejectionReason": { $exists: false } }),
             User.countDocuments({ ...baseSubmitted, "riderProfile.isApproved": true }),
+            User.countDocuments({ ...baseSubmitted, "riderProfile.isApproved": false, "riderProfile.kycRejectionReason": { $exists: true, $ne: "" } }),
             User.countDocuments(baseSubmitted),
         ]);
 
@@ -79,7 +85,7 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
                 name:          `${u.firstName} ${u.lastName}`.trim() || "Unknown",
                 phone:         u.phone,
                 documentCount: u.riderProfile?.documents?.length ?? 0,
-                status:        (u.riderProfile?.isApproved ? "approved" : "pending") as "approved" | "pending",
+                status:        (u.riderProfile?.isApproved ? "approved" : u.riderProfile?.kycRejectionReason ? "rejected" : "pending") as "approved" | "pending" | "rejected",
                 urgency:       (hoursWaiting > 24 ? "urgent" : hoursWaiting > 4 ? "medium" : null) as "urgent" | "medium" | null,
                 submittedAt:   u.updatedAt,
             };
@@ -94,7 +100,7 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
                     all:      allCount,
                     pending:  pendingCount,
                     approved: approvedCount,
-                    rejected: 0,
+                    rejected: rejectedCount,
                 },
                 pagination: {
                     page,
@@ -111,6 +117,157 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
             page:   t.Optional(t.String()),
             limit:  t.Optional(t.String()),
         }),
+    })
+
+    // GET /api/admin/kyc/applications/:id
+    .get("/kyc/applications/:id", async ({ params, set }) => {
+        const { id } = params;
+
+        if (!/^[0-9a-fA-F]{24}$/.test(id)) {
+            set.status = 400;
+            return { success: false, message: "Invalid application ID" };
+        }
+
+        const user = await User.findOne({
+            _id: id,
+            role: "rider",
+            "riderProfile.applicationSubmitted": true,
+        })
+            .select("firstName lastName phone email dateOfBirth gender address emergencyContact riderProfile createdAt updatedAt")
+            .lean();
+
+        if (!user) {
+            set.status = 404;
+            return { success: false, message: "KYC Application not found" };
+        }
+
+        const DOC_TYPE_LABELS: Record<string, string> = {
+            national_id:          "National ID / Passport",
+            driving_license:      "Driving License (A)",
+            psv_license:          "PSV License / Badge",
+            vehicle_registration: "Vehicle Registration (Logbook)",
+            insurance:            "Insurance Certificate",
+            good_conduct:         "Good Conduct Certificate",
+            selfie_with_id:       "Selfie Verification",
+        };
+
+        const CHECKLIST = [
+            "All documents uploaded",
+            "National ID matches selfie",
+            "Driving license is Class A",
+            "PSV license is valid & current",
+            "Insurance certificate is active",
+            "Good conduct < 12 months old",
+            "Logbook matches plate number",
+        ];
+
+        const ec = user.emergencyContact;
+        const emergency = ec ? `${ec.name} — ${ec.phone}` : "—";
+        const v = user.riderProfile?.vehicle;
+
+        return {
+            success: true,
+            message: "Application fetched",
+            data: {
+                id:        user._id,
+                name:      `${user.firstName} ${user.lastName}`.trim(),
+                kycRef:    `KYC-${String(user._id).slice(-6).toUpperCase()}`,
+                appliedAt: (user.createdAt as Date).toISOString().split("T")[0],
+                status:    user.riderProfile?.isApproved ? "approved" : user.riderProfile?.kycRejectionReason ? "rejected" : "pending",
+                personal: {
+                    fullName:   `${user.firstName} ${user.lastName}`.trim(),
+                    phone:      user.phone,
+                    email:      user.email ?? "—",
+                    nationalId:  "—",
+                    dob:        user.dateOfBirth
+                        ? (user.dateOfBirth as Date).toISOString().split("T")[0]
+                        : "—",
+                    gender:  user.gender ?? "—",
+                    address: user.address ?? "—",
+                    emergency,
+                },
+                vehicle: v ? {
+                    make:     v.make,
+                    model:    v.model,
+                    year:     String(v.year),
+                    plate:    v.plateNumber,
+                    color:    v.color,
+                    engineNo: v.engineNumber ?? "—",
+                } : null,
+                documents: (user.riderProfile?.documents ?? []).map((doc) => ({
+                    type:       doc.type,
+                    title:      DOC_TYPE_LABELS[doc.type] ?? doc.type,
+                    url:        doc.url,
+                    verified:   doc.verified,
+                    uploadedAt: (doc.uploadedAt as Date).toISOString(),
+                })),
+                checklist: CHECKLIST,
+            },
+        };
+    }, {
+        params: t.Object({ id: t.String() }),
+    })
+
+    // PATCH /api/admin/kyc/applications/:id/approve
+    .patch("/kyc/applications/:id/approve", async ({ params, set }) => {
+        const { id } = params;
+
+        if (!/^[0-9a-fA-F]{24}$/.test(id)) {
+            set.status = 400;
+            return { success: false, message: "Invalid application ID" };
+        }
+
+        const result = await User.updateOne(
+            { _id: id, role: "rider", "riderProfile.applicationSubmitted": true },
+            {
+                $set: {
+                    "riderProfile.isApproved": true,
+                    "riderProfile.isVerified": true,
+                    "riderProfile.documents.$[].verified": true,
+                },
+                $unset: { "riderProfile.kycRejectionReason": "" },
+            }
+        );
+
+        if (result.matchedCount === 0) {
+            set.status = 404;
+            return { success: false, message: "Application not found" };
+        }
+
+        return { success: true, message: "Application approved" };
+    }, {
+        params: t.Object({ id: t.String() }),
+    })
+
+    // PATCH /api/admin/kyc/applications/:id/reject
+    .patch("/kyc/applications/:id/reject", async ({ params, body, set }) => {
+        const { id } = params;
+
+        if (!/^[0-9a-fA-F]{24}$/.test(id)) {
+            set.status = 400;
+            return { success: false, message: "Invalid application ID" };
+        }
+
+        const result = await User.updateOne(
+            { _id: id, role: "rider", "riderProfile.applicationSubmitted": true },
+            {
+                $set: {
+                    "riderProfile.isApproved": false,
+                    "riderProfile.isVerified": false,
+                    "riderProfile.kycRejectionReason": body.reason?.trim() || "Rejected by admin",
+                },
+            }
+        );
+
+        if (result.matchedCount === 0) {
+            set.status = 404;
+            return { success: false, message: "Application not found" };
+        }
+
+        return { success: true, message: "Application rejected" };
+    }, {
+        params: t.Object({ id: t.String() }),
+        body: t.Object({ reason: t.Optional(t.String()) }),
     })
 
     .get("/dashboard/stats", async () => {
