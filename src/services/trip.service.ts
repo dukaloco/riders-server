@@ -267,6 +267,58 @@ export const TripService = {
 
     // Get earnings summary for a rider.
 
+    getRiderDashboard: async (riderId: string) => {
+        const riderObjectId = new mongoose.Types.ObjectId(riderId);
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+
+        const [user, todayStats, activeDeliveries] = await Promise.all([
+            User.findById(riderId)
+                .select("riderProfile.currentStatus riderProfile.rating riderProfile.totalTrips"),
+
+            Trip.aggregate([
+                {
+                    $match: {
+                        riderId: riderObjectId,
+                        acceptedAt: { $gte: todayStart },
+                    },
+                },
+                {
+                    $group: {
+                        _id: null,
+                        rides:     { $sum: 1 },
+                        completed: { $sum: { $cond: [{ $eq: ["$status", "delivered"] },  1, 0] } },
+                        cancelled: { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] } },
+                        revenue:   { $sum: { $cond: [{ $eq: ["$status", "delivered"] }, "$totalFare", 0] } },
+                    },
+                },
+            ]),
+
+            Trip.find({
+                riderId: riderObjectId,
+                status: { $in: ["accepted", "in_transit"] },
+            })
+                .populate("customerId", "firstName lastName phone")
+                .sort({ updatedAt: -1 })
+                .lean(),
+        ]);
+
+        const stats = todayStats[0] ?? { rides: 0, completed: 0, cancelled: 0, revenue: 0 };
+
+        return {
+            status:      user?.riderProfile?.currentStatus ?? "offline",
+            rating:      user?.riderProfile?.rating        ?? 0,
+            totalTrips:  user?.riderProfile?.totalTrips    ?? 0,
+            today: {
+                rides:     stats.rides,
+                completed: stats.completed,
+                cancelled: stats.cancelled,
+                revenue:   stats.revenue,
+            },
+            activeDeliveries,
+        };
+    },
+
     getRiderEarnings: async (riderId: string) => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);

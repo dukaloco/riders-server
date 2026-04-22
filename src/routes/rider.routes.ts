@@ -26,6 +26,13 @@ export const riderRoutes = new Elysia({ prefix: "/api/riders" })
         return { success: true, message: "You are now offline", data: { status: "offline" } };
     })
 
+    // ─── Dashboard (home screen) ───────────────────────────────────────────────
+
+    .get("/dashboard", async ({ user }) => {
+        const data = await TripService.getRiderDashboard(user!.id);
+        return { success: true, message: "Dashboard fetched", data };
+    })
+
     // ─── Stats & history ──────────────────────────────────────────────────────
 
     .get("/status", async ({ user }) => {
