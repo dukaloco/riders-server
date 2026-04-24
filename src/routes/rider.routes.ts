@@ -51,13 +51,21 @@ export const riderRoutes = new Elysia({ prefix: "/api/riders" })
 
     .get("/trips", async ({ user, query }) => {
         const { page, limit } = parsePagination(query as any);
-        const result = await TripService.getRiderTrips(user!.id, query.status as any, page, limit);
+        let status: any = undefined;
+        if (query.statuses) {
+            status = query.statuses.split(',').filter(Boolean);
+        } else if (query.status) {
+            status = query.status;
+        }
+        const result = await TripService.getRiderTrips(user!.id, status, query.search, page, limit);
         return { success: true, message: "Trips fetched", data: result };
     }, {
         query: t.Object({
-            page: t.Optional(t.String()),
-            limit: t.Optional(t.String()),
-            status: t.Optional(t.String()),
+            page:     t.Optional(t.String()),
+            limit:    t.Optional(t.String()),
+            status:   t.Optional(t.String()),
+            statuses: t.Optional(t.String()),
+            search:   t.Optional(t.String()),
         }),
     })
 

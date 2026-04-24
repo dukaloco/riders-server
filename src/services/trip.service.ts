@@ -247,10 +247,34 @@ export const TripService = {
 
     // Get trip history for a rider.
 
-    getRiderTrips: async (riderId: string, status?: TripStatus, page = 1, limit = 20) => {
+    getRiderTrips: async (
+        riderId: string,
+        status?: TripStatus | TripStatus[],
+        search?: string,
+        page = 1,
+        limit = 20,
+    ) => {
         const skip = (page - 1) * limit;
         const filter: Record<string, unknown> = { riderId };
-        if (status) filter.status = status;
+
+        if (Array.isArray(status) && status.length) {
+            filter.status = { $in: status };
+        } else if (status) {
+            filter.status = status;
+        }
+
+        if (search?.trim()) {
+            const re = new RegExp(search.trim(), 'i');
+            const matchingCustomers = await User.find({
+                $or: [{ firstName: re }, { lastName: re }],
+            }).select('_id').lean();
+            const customerIds = matchingCustomers.map(u => u._id);
+            filter.$or = [
+                { 'pickup.address':  re },
+                { 'dropoff.address': re },
+                ...(customerIds.length ? [{ customerId: { $in: customerIds } }] : []),
+            ];
+        }
 
         const [trips, total] = await Promise.all([
             Trip.find(filter)
