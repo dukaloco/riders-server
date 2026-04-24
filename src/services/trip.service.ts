@@ -296,7 +296,7 @@ export const TripService = {
 
             Trip.find({
                 riderId: riderObjectId,
-                status: { $in: ["accepted", "in_transit"] },
+                status: { $in: ["accepted", "picked_up", "in_transit"] },
             })
                 .populate("customerId", "firstName lastName phone")
                 .sort({ updatedAt: -1 })

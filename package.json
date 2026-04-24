@@ -6,7 +6,8 @@
   "scripts": {
     "start": "bun index.ts",
     "dev": "bun --watch index.ts",
-    "create-admin": "bun scripts/create-admin.ts"
+    "create-admin": "bun scripts/create-admin.ts",
+    "seed-trips": "bun scripts/seed-active-trips.ts"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
