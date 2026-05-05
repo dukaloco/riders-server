@@ -5,7 +5,7 @@ import type { IUser } from "../models/User";
 
 export interface TokenPayload {
     id: string;
-    role: "rider" | "customer" | "admin";
+    roles: Array<"rider" | "customer" | "admin">;
     phone: string;
 }
 
@@ -22,7 +22,7 @@ export const AuthService = {
     issueToken: (user: IUser): string => {
         const payload: TokenPayload = {
             id: user._id.toString(),
-            role: user.role,
+            roles: user.roles,
             phone: user.phone,
         };
         return generateAccessToken(payload);

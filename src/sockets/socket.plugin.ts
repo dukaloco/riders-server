@@ -22,7 +22,7 @@ export const socketPlugin = new Elysia({ name: "sockets" })
         return {
             user: {
                 id: payload.id as string,
-                role: payload.role as string,
+                roles: payload.roles as string[],
             },
         };
     })
@@ -34,7 +34,7 @@ export const socketPlugin = new Elysia({ name: "sockets" })
         async open(ws) {
             if (!ws.data.user) return ws.close();
 
-            logger.info(` WS Connected: ${ws.data.user.id} (${ws.data.user.role})`);
+            logger.info(` WS Connected: ${ws.data.user.id} (${ws.data.user.roles.join(',')})`);
 
             // Store socket availability in Redis
             await redis.setex(REDIS_KEYS.riderSocket(ws.data.user.id), 3600, "active");
@@ -42,7 +42,7 @@ export const socketPlugin = new Elysia({ name: "sockets" })
             // Join personal room
             ws.subscribe(`user:${ws.data.user.id}`);
 
-            if (ws.data.user.role === "rider") {
+            if (ws.data.user.roles.includes("rider")) {
                 ws.subscribe("rider:pool");
             }
         },
@@ -52,7 +52,7 @@ export const socketPlugin = new Elysia({ name: "sockets" })
 
             switch (type) {
                 case "location:update":
-                    if (user.role !== "rider") return;
+                    if (!user.roles.includes("rider")) return;
                     const { latitude, longitude, heading, speed } = payload;
 
                     // Persist to Redis

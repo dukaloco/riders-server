@@ -89,7 +89,7 @@ export const profileRoutes = new Elysia({ prefix: "/api/profile" })
     // ─── Rider vehicle + experience setup ─────────────────────────────────────
 
     .put("/rider", async ({ user, body }) => {
-        if (user!.role !== "rider") {
+        if (!user!.roles.includes("rider")) {
             throw new ForbiddenError("Only riders can set up a rider profile.");
         }
 
@@ -143,7 +143,7 @@ export const profileRoutes = new Elysia({ prefix: "/api/profile" })
     // ─── Upload KYC document (riders only) ────────────────────────────────────
 
     .post("/documents", async ({ user, body }) => {
-        if (user!.role !== "rider") {
+        if (!user!.roles.includes("rider")) {
             throw new ForbiddenError("Only riders can upload KYC documents.");
         }
         if (!body.file) throw new BadRequestError("No file provided.");
@@ -185,7 +185,7 @@ export const profileRoutes = new Elysia({ prefix: "/api/profile" })
     // ─── Submit application (riders only) ─────────────────────────────────────
 
     .post("/submit-application", async ({ user }) => {
-        if (user!.role !== "rider") {
+        if (!user!.roles.includes("rider")) {
             throw new ForbiddenError("Only riders can submit an application.");
         }
 

@@ -23,7 +23,12 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
             }
 
             const existing = await User.findOne({ phone: body.phone });
-            if (existing) throw new ConflictError("Phone number already registered.");
+            if (existing) {
+                if (existing.roles.includes(body.role)) {
+                    throw new ConflictError("You already have an account with this role.");
+                }
+                // Phone exists under a different role — allow adding this role via OTP
+            }
 
             // name is collected during onboarding step 1
             await OtpService.storePendingRegistration({ ...body, name: "" });
@@ -155,13 +160,31 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
             const pending = await OtpService.getPendingRegistration(body.phone);
 
             if (pending) {
+                const existingUser = await User.findOne({ phone: pending.phone });
+
+                if (existingUser) {
+                    // Cross-role registration: add new role to existing account
+                    if (!existingUser.roles.includes(pending.role)) {
+                        existingUser.roles.push(pending.role);
+                        await existingUser.save();
+                    }
+                    await OtpService.clearPendingRegistration(body.phone);
+                    const token = AuthService.issueToken(existingUser);
+                    return {
+                        success: true,
+                        message: "Role added to your account successfully.",
+                        data: { user: existingUser.toPublicJSON(), accessToken: token },
+                    };
+                }
+
+                // New user — create account
                 const user = new User({
                     firstName: '',
                     lastName:  '',
                     phone: pending.phone,
                     password: pending.password,
                     email: pending.email,
-                    role: pending.role,
+                    roles: [pending.role],
                     isPhoneVerified: true,
                 });
 

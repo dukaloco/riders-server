@@ -23,7 +23,7 @@ export const authPlugin = new Elysia({ name: "auth" })
         return {
             user: {
                 id: payload.id as string,
-                role: payload.role as "rider" | "customer" | "admin",
+                roles: payload.roles as Array<"rider" | "customer" | "admin">,
                 phone: payload.phone as string,
             },
         };
@@ -35,7 +35,7 @@ export const authPlugin = new Elysia({ name: "auth" })
                     set.status = 401;
                     return { success: false, message: "Authentication required" };
                 }
-                if (roles && !roles.includes(user.role)) {
+                if (roles && !user.roles.some((r: string) => roles.includes(r as any))) {
                     set.status = 403;
                     return { success: false, message: "Forbidden: insufficient permissions" };
                 }
@@ -43,7 +43,7 @@ export const authPlugin = new Elysia({ name: "auth" })
         },
         isApprovedRider: () => {
             onBeforeHandle(async ({ user, set }: { user: any; set: any }) => {
-                if (!user || user.role !== "rider") {
+                if (!user || !user.roles.includes("rider")) {
                     set.status = 403;
                     return { success: false, message: "Riders only" };
                 }

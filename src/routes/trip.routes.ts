@@ -30,8 +30,8 @@ export const tripRoutes = new Elysia({ prefix: "/api/trips" })
         .get("/", async ({ user, query }) => {
             const { page, limit, skip } = parsePagination(query as any);
             const filter: Record<string, unknown> = {};
-            if (user!.role === "rider") filter.riderId = user!.id;
-            else if (user!.role === "customer") filter.customerId = user!.id;
+            if (user!.roles.includes("rider")) filter.riderId = user!.id;
+            else if (user!.roles.includes("customer")) filter.customerId = user!.id;
             // admin: no filter — sees all trips
             if (query.status) filter.status = query.status; // enum-validated by TypeBox below
 
@@ -85,7 +85,7 @@ export const tripRoutes = new Elysia({ prefix: "/api/trips" })
         })
 
         .post("/:id/cancel", async ({ user, params, body }) => {
-            const cancelledBy = user!.role === "rider" ? "rider" : "customer";
+            const cancelledBy = user!.roles.includes("rider") ? "rider" : "customer";
             const trip = await TripService.cancelTrip(params.id, cancelledBy, body.reason, user!.id);
             return { success: true, message: "Trip cancelled", data: trip };
         }, {
@@ -93,7 +93,7 @@ export const tripRoutes = new Elysia({ prefix: "/api/trips" })
         })
 
         .post("/:id/rate", async ({ user, params, body }) => {
-            const ratedBy = user!.role === "rider" ? "rider" : "customer";
+            const ratedBy = user!.roles.includes("rider") ? "rider" : "customer";
             const trip = await TripService.rateTrip(params.id, ratedBy, body.score, body.comment);
             return { success: true, message: "Rating submitted", data: trip };
         }, {

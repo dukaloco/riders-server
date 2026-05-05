@@ -66,7 +66,7 @@ export interface IUser extends Document {
     username?: string;
     password?: string;
     avatar?: string;
-    role: "rider" | "customer" | "admin";
+    roles: Array<"rider" | "customer" | "admin">;
     isActive: boolean;
     isPhoneVerified: boolean;
     fcmToken?: string;
@@ -171,11 +171,11 @@ const UserSchema = new Schema<IUser>(
         username: { type: String, sparse: true, unique: true, lowercase: true, trim: true },
         password: { type: String, minlength: 6 },
         avatar: { type: String },
-        role: {
-            type: String,
+        roles: {
+            type: [String],
             enum: ["rider", "customer", "admin"],
             required: true,
-            default: "rider",
+            default: ["rider"],
         },
         isActive: { type: Boolean, default: true },
         isPhoneVerified: { type: Boolean, default: false },
