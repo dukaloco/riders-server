@@ -30,10 +30,22 @@ export const tripRoutes = new Elysia({ prefix: "/api/trips" })
         .get("/", async ({ user, query }) => {
             const { page, limit, skip } = parsePagination(query as any);
             const filter: Record<string, unknown> = {};
-            if (user!.roles.includes("rider")) filter.riderId = user!.id;
-            else if (user!.roles.includes("customer")) filter.customerId = user!.id;
-            // admin: no filter — sees all trips
-            if (query.status) filter.status = query.status; // enum-validated by TypeBox below
+            const requestedRole = query.role;
+            console.log(`[trips] user=${user!.id} roles=${user!.roles} requestedRole=${requestedRole}`);
+            if (requestedRole === "customer" && user!.roles.includes("customer")) {
+                filter.customerId = user!.id;
+            } else if (requestedRole === "rider" && user!.roles.includes("rider")) {
+                filter.riderId = user!.id;
+            } else if (!user!.roles.includes("admin")) {
+                // fallback when no role param: rider takes precedence
+                if (user!.roles.includes("rider")) filter.riderId = user!.id;
+                else if (user!.roles.includes("customer")) filter.customerId = user!.id;
+            }
+            // admin with no role param: no filter — sees all trips
+            if (query.status) {
+                const statuses = query.status.split(',').map(s => s.trim()).filter(Boolean);
+                filter.status = statuses.length === 1 ? statuses[0] : { $in: statuses };
+            }
 
             const [trips, total] = await Promise.all([
                 Trip.find(filter)
@@ -51,17 +63,11 @@ export const tripRoutes = new Elysia({ prefix: "/api/trips" })
             };
         }, {
             query: t.Object({
-                page: t.Optional(t.String()),
-                limit: t.Optional(t.String()),
-                status: t.Optional(t.Union([
-                    t.Literal("pending"),
-                    t.Literal("accepted"),
-                    t.Literal("picked_up"),
-                    t.Literal("in_transit"),
-                    t.Literal("delivered"),
-                    t.Literal("cancelled"),
-                    t.Literal("rejected"),
-                ])),
+                page:   t.Optional(t.String()),
+                limit:  t.Optional(t.String()),
+                role:   t.Optional(t.String()),
+                status: t.Optional(t.String()),
+                search: t.Optional(t.String()),
             }),
         })
 

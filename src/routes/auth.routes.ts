@@ -15,6 +15,18 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
 
     // ─── Registration ─────────────────────────────────────────────────────────
 
+    .get(
+        "/check-phone",
+        async ({ query }) => {
+            const user = await User.findOne({ phone: query.phone, isActive: true });
+            if (!user) return { exists: false, roles: [] as string[] };
+            return { exists: true, roles: user.roles ?? [] };
+        },
+        {
+            query: t.Object({ phone: phoneSchema }),
+        }
+    )
+
     .post(
         "/register",
         async ({ body }) => {
@@ -27,11 +39,18 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
                 if (existing.roles.includes(body.role)) {
                     throw new ConflictError("You already have an account with this role.");
                 }
-                // Phone exists under a different role — allow adding this role via OTP
+                // Cross-role: password not required — just add the new role via OTP
+                await OtpService.storePendingRegistration({ phone: body.phone, password: "", role: body.role, name: "" });
+                await OtpService.send(body.phone);
+                return { success: true, message: "OTP sent. Please check your phone for the verification code." };
             }
 
-            // name is collected during onboarding step 1
-            await OtpService.storePendingRegistration({ ...body, name: "" });
+            // New user — password required
+            if (!body.password || body.password.length < 6) {
+                throw new BadRequestError("Password must be at least 6 characters.");
+            }
+
+            await OtpService.storePendingRegistration({ ...body, password: body.password, name: "" });
             await OtpService.send(body.phone);
 
             return { success: true, message: "OTP sent. Please check your phone for the verification code." };
@@ -39,7 +58,7 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
         {
             body: t.Object({
                 phone:    phoneSchema,
-                password: t.String({ minLength: 6, maxLength: 100 }),
+                password: t.Optional(t.String({ maxLength: 100 })),
                 role:     t.Enum({ rider: "rider", customer: "customer", admin: "admin" }),
             }),
         }
@@ -57,6 +76,12 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
                 if (!user) {
                     throw new UnauthorizedError(
                         "No account found for this number. Sign up to create one."
+                    );
+                }
+                const roles: string[] = user.roles ?? [];
+                if (!roles.includes("customer")) {
+                    throw new ForbiddenError(
+                        "This number is registered as a rider only. Sign up to add a customer account."
                     );
                 }
                 await OtpService.send(body.phone);
@@ -97,6 +122,13 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
 
             const isMatch = await user.comparePassword(body.password);
             if (!isMatch) throw new UnauthorizedError("Invalid credentials.");
+
+            const roles: string[] = user.roles ?? [];
+            if (!roles.includes("customer")) {
+                throw new ForbiddenError(
+                    "This account is registered as a rider only. Sign up to add a customer account."
+                );
+            }
 
             const token = AuthService.issueToken(user);
             return {
