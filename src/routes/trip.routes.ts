@@ -9,23 +9,21 @@ import { BadRequestError, ForbiddenError, NotFoundError } from "../utils/errors"
 export const tripRoutes = new Elysia({ prefix: "/api/trips" })
     .use(authPlugin)
 
-    // ─── Public: price quote ──────────────────────────────────────────────────
-
-    .post("/quote", async ({ body }) => {
-        const quote = await TripService.getQuote(body);
-        return { success: true, message: "Quote calculated", data: quote };
-    }, {
-        body: t.Object({
-            pickupLat: t.Number(),
-            pickupLng: t.Number(),
-            dropoffLat: t.Number(),
-            dropoffLng: t.Number(),
-        }),
-    })
-
     // ─── Authenticated routes ─────────────────────────────────────────────────
 
     .guard({ isAuth: true }, (app) => app
+
+        .post("/quote", async ({ body }) => {
+            const quote = await TripService.getQuote(body);
+            return { success: true, message: "Quote calculated", data: quote };
+        }, {
+            body: t.Object({
+                pickupLat:  t.Number(),
+                pickupLng:  t.Number(),
+                dropoffLat: t.Number(),
+                dropoffLng: t.Number(),
+            }),
+        })
 
         .get("/", async ({ user, query }) => {
             const { page, limit, skip } = parsePagination(query as any);
@@ -34,13 +32,22 @@ export const tripRoutes = new Elysia({ prefix: "/api/trips" })
             console.log(`[trips] user=${user!.id} roles=${user!.roles} requestedRole=${requestedRole}`);
             if (requestedRole === "customer" && user!.roles.includes("customer")) {
                 filter.customerId = user!.id;
+                console.log(`[trips] Filter set: customerId=${user!.id}`);
             } else if (requestedRole === "rider" && user!.roles.includes("rider")) {
                 filter.riderId = user!.id;
+                console.log(`[trips] Filter set: riderId=${user!.id}`);
             } else if (!user!.roles.includes("admin")) {
                 // fallback when no role param: rider takes precedence
-                if (user!.roles.includes("rider")) filter.riderId = user!.id;
-                else if (user!.roles.includes("customer")) filter.customerId = user!.id;
+                if (user!.roles.includes("rider")) {
+                    filter.riderId = user!.id;
+                    console.log(`[trips] Fallback filter: riderId=${user!.id}`);
+                }
+                else if (user!.roles.includes("customer")) {
+                    filter.customerId = user!.id;
+                    console.log(`[trips] Fallback filter: customerId=${user!.id}`);
+                }
             }
+            console.log(`[trips] Final filter:`, JSON.stringify(filter));
             // admin with no role param: no filter — sees all trips
             if (query.status) {
                 const statuses = query.status.split(',').map(s => s.trim()).filter(Boolean);
@@ -118,23 +125,28 @@ export const tripRoutes = new Elysia({ prefix: "/api/trips" })
         }, {
             isAuth: ["customer", "admin"],
             body: t.Object({
+                quoteId: t.String({ minLength: 1 }),
                 pickup: t.Object({
-                    address: t.String({ minLength: 3 }),
-                    latitude: t.Number(),
+                    address:   t.String({ minLength: 3 }),
+                    latitude:  t.Number(),
                     longitude: t.Number(),
-                    landmark: t.Optional(t.String()),
+                    landmark:  t.Optional(t.String()),
                 }),
                 dropoff: t.Object({
-                    address: t.String({ minLength: 3 }),
-                    latitude: t.Number(),
+                    address:   t.String({ minLength: 3 }),
+                    latitude:  t.Number(),
                     longitude: t.Number(),
-                    landmark: t.Optional(t.String()),
+                    landmark:  t.Optional(t.String()),
+                }),
+                recipient: t.Object({
+                    name:  t.String({ minLength: 2, maxLength: 100 }),
+                    phone: t.String({ minLength: 7, maxLength: 20 }),
                 }),
                 parcel: t.Object({
-                    description: t.String({ minLength: 3, maxLength: 200 }),
-                    weight: t.Optional(t.Number()),
-                    size: t.Optional(t.Enum({ small: "small", medium: "medium", large: "large" })),
-                    isFragile: t.Optional(t.Boolean({ default: false })),
+                    description:         t.String({ minLength: 3, maxLength: 200 }),
+                    weight:              t.Optional(t.Number()),
+                    size:                t.Optional(t.Enum({ small: "small", medium: "medium", large: "large" })),
+                    isFragile:           t.Optional(t.Boolean({ default: false })),
                     specialInstructions: t.Optional(t.String({ maxLength: 500 })),
                 }),
             }),

@@ -26,6 +26,10 @@ const envSchema = z.object({
     STORAGE_SECRET_KEY: z.string().min(1, "STORAGE_SECRET_KEY is required"),
     STORAGE_PUBLIC_URL: z.string().min(1, "STORAGE_PUBLIC_URL is required"),
 
+    // Google Maps — used server-side for road-distance pricing. Falls back to
+    // straight-line (Haversine) when absent so the server still boots without it.
+    GOOGLE_MAPS_API_KEY: z.string().optional(),
+
     BASE_FARE: z.coerce.number().default(50),
     PRICE_PER_KM: z.coerce.number().default(20),
     MINIMUM_FARE: z.coerce.number().default(100),

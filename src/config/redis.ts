@@ -46,6 +46,7 @@ export const REDIS_KEYS = {
     riderSocket: (riderId: string) => `rider:socket:${riderId}`,
     onlineRiders: () => `riders:online`,
     tripLock: (tripId: string) => `trip:lock:${tripId}`,
+    quote: (quoteId: string) => `quote:${quoteId}`,
     rateLimit: (ip: string) => `rate_limit:${ip}`,
     otp: (phone: string) => `otp:${phone}`,
     otpAttempts: (phone: string) => `otp:attempts:${phone}`,
@@ -59,6 +60,7 @@ export const TTL = {
     RIDER_STATUS: 3600,
     RATE_LIMIT: 60,
     TRIP_LOCK: 30,
+    QUOTE: 300,   // 5 minutes — matches typical ride-hailing quote window
     OTP: 300,
     OTP_PENDING: 600,
     OTP_ATTEMPTS: 3600,

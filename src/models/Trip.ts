@@ -10,6 +10,11 @@ export interface IAddress {
     landmark?: string;
 }
 
+export interface IRecipient {
+    name: string;
+    phone: string;
+}
+
 export interface IParcel {
     description: string;
     weight?: number;   // kg
@@ -42,6 +47,9 @@ export interface ITrip extends Document {
     pickup: IAddress;
     dropoff: IAddress;
     waypoints?: IAddress[];
+
+    // Recipient
+    recipient: IRecipient;
 
     // Parcel info
     parcel: IParcel;
@@ -96,6 +104,14 @@ const AddressSchema = new Schema<IAddress>(
     { _id: false }
 );
 
+const RecipientSchema = new Schema<IRecipient>(
+    {
+        name:  { type: String, required: true },
+        phone: { type: String, required: true },
+    },
+    { _id: false }
+);
+
 const ParcelSchema = new Schema<IParcel>(
     {
         description: { type: String, required: true },
@@ -142,6 +158,7 @@ const TripSchema = new Schema<ITrip>(
         dropoff: { type: AddressSchema, required: true },
         waypoints: [AddressSchema],
 
+        recipient: { type: RecipientSchema, required: true },
         parcel: { type: ParcelSchema, required: true },
 
         distanceKm: { type: Number, required: true },

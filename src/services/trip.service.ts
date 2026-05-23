@@ -4,52 +4,107 @@ import { User } from "../models/User";
 import { redis, REDIS_KEYS, TTL } from "../config/redis";
 import { PricingService } from "./pricing.service";
 import { MatchingService } from "./matching.service";
-import type { IAddress, IParcel } from "../models/Trip";
+import type { IAddress, IParcel, IRecipient } from "../models/Trip";
 import type { TripStatus } from "../types";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../utils/errors";
+import { estimateTravelMinutes } from "../utils/distance";
+import { getRoadDistance } from "../utils/googleMaps";
 
 export const TripService = {
 
     // Get a price quote before creating a trip.
     getQuote: async (input: {
-        pickupLat: number;
-        pickupLng: number;
+        pickupLat:  number;
+        pickupLng:  number;
         dropoffLat: number;
         dropoffLng: number;
     }) => {
-        const quote = PricingService.calculateQuote(
+        // Use real road distance (Directions API) so the fare reflects actual roads.
+        const road = await getRoadDistance(
             input.pickupLat,
             input.pickupLng,
             input.dropoffLat,
-            input.dropoffLng
+            input.dropoffLng,
         );
-        const riders = await MatchingService.findNearbyRiders(input.pickupLat, input.pickupLng, 10);
-        return { ...quote, availableRiders: riders.length };
+
+        const quote = PricingService.calculateQuote(road.distanceKm, road.durationMinutes);
+
+        const nearbyRiders = await MatchingService.findNearbyRiders(input.pickupLat, input.pickupLng, 10);
+
+        // Fetch rider profiles for the closest 5 riders
+        const riderIds = nearbyRiders.slice(0, 5).map(r => r.riderId);
+        const users = await User.find(
+            { _id: { $in: riderIds } },
+            "firstName lastName riderProfile.rating riderProfile.vehicle"
+        );
+        const userMap = new Map(users.map(u => [u._id.toString(), u]));
+
+        const riders = nearbyRiders.slice(0, 5).map(r => {
+            const user = userMap.get(r.riderId);
+            return {
+                riderId:     r.riderId,
+                name:        user ? `${user.firstName} ${user.lastName}` : "Rider",
+                rating:      user?.riderProfile?.rating ?? 0,
+                vehicle:     user?.riderProfile?.vehicle?.make ?? "Boda Boda",
+                plateNumber: user?.riderProfile?.vehicle?.plateNumber ?? "",
+                distanceKm:  Math.round(r.distanceKm * 10) / 10,
+                // Estimate arrival time at 25 km/h (boda boda in traffic)
+                etaMinutes:  estimateTravelMinutes(r.distanceKm, 25),
+            };
+        });
+
+        // Lock the quote in Redis for 5 minutes so the fare cannot change
+        // between the customer seeing it and confirming the trip.
+        const quoteId = crypto.randomUUID();
+        await redis.set(
+            REDIS_KEYS.quote(quoteId),
+            JSON.stringify({ ...quote, riders }),
+            "EX",
+            TTL.QUOTE,
+        );
+
+        return { ...quote, riders, quoteId };
     },
 
 
-    //Create a new trip (from customer side).
-
+    // Create a new trip (from customer side).
     createTrip: async (input: {
         customerId: string;
-        pickup: IAddress;
-        dropoff: IAddress;
-        parcel: IParcel;
+        quoteId:    string;
+        pickup:     IAddress;
+        dropoff:    IAddress;
+        recipient:  IRecipient;
+        parcel:     IParcel;
     }) => {
-        const quote = PricingService.calculateQuote(
-            input.pickup.latitude,
-            input.pickup.longitude,
-            input.dropoff.latitude,
-            input.dropoff.longitude
-        );
+        // Retrieve the locked quote. If it's gone (expired or never existed)
+        // reject the request — prevents stale or manipulated fares.
+        const raw = await redis.get(REDIS_KEYS.quote(input.quoteId));
+        if (!raw) {
+            throw new BadRequestError(
+                "Your price quote has expired. Please go back and request a new quote."
+            );
+        }
+
+        const lockedQuote = JSON.parse(raw) as {
+            distanceKm:       number;
+            estimatedMinutes: number;
+            baseFare:         number;
+            distanceFare:     number;
+            totalFare:        number;
+            currency:         string;
+        };
+
+        // Consume the quote so it cannot be reused for a second trip.
+        await redis.del(REDIS_KEYS.quote(input.quoteId));
 
         const trip = new Trip({
             customerId: new mongoose.Types.ObjectId(input.customerId),
-            pickup: input.pickup,
-            dropoff: input.dropoff,
-            parcel: input.parcel,
-            ...quote,
-            status: "pending",
+            pickup:     input.pickup,
+            dropoff:    input.dropoff,
+            recipient:  input.recipient,
+            parcel:     input.parcel,
+            ...lockedQuote,
+            status:        "pending",
             statusHistory: [{ status: "pending", timestamp: new Date() }],
         });
 
