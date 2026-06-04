@@ -5,6 +5,8 @@ import { authPlugin } from "../middleware/auth.middleware";
 import { Trip } from "../models/Trip";
 import { StorageService } from "../services/storage.service";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../utils/errors";
+import { wsBroadcast } from "../sockets/serverRef";
+import { redis, REDIS_KEYS, TTL } from "../config/redis";
 
 export const tripRoutes = new Elysia({ prefix: "/api/trips" })
     .use(authPlugin)
@@ -119,13 +121,47 @@ export const tripRoutes = new Elysia({ prefix: "/api/trips" })
         // ─── Customer only ────────────────────────────────────────────────────
 
         .post("/", async ({ user, body, set }) => {
-            const trip = await TripService.createTrip({ customerId: user!.id, ...body });
+            const { preferredRiderId, ...tripBody } = body;
+            const trip = await TripService.createTrip({ customerId: user!.id, ...tripBody });
+
+            // Push a real-time request to the chosen rider.
+            // If their WebSocket isn't connected right now, queue it in Redis so it
+            // gets delivered the moment they (re)connect — avoids lost notifications.
+            if (preferredRiderId) {
+                const notification = {
+                    type: "trip:request",
+                    payload: {
+                        tripId:            trip._id.toString(),
+                        fare:              trip.totalFare,
+                        currency:          trip.currency,
+                        parcelDescription: trip.parcel.description,
+                        pickup:            trip.pickup,
+                        dropoff:           trip.dropoff,
+                        distanceKm:        trip.distanceKm,
+                        estimatedMinutes:  trip.estimatedMinutes,
+                    },
+                };
+
+                const delivered = wsBroadcast(`user:${preferredRiderId}`, notification);
+
+                if (delivered === 0) {
+                    // Rider not connected — store for delivery on next WS open
+                    await redis.set(
+                        REDIS_KEYS.riderPendingNotif(preferredRiderId),
+                        JSON.stringify(notification),
+                        "EX",
+                        TTL.RIDER_NOTIF,
+                    );
+                }
+            }
+
             set.status = 201;
             return { success: true, message: "Trip created successfully", data: trip };
         }, {
             isAuth: ["customer", "admin"],
             body: t.Object({
                 quoteId: t.String({ minLength: 1 }),
+                preferredRiderId: t.Optional(t.String()),
                 pickup: t.Object({
                     address:   t.String({ minLength: 3 }),
                     latitude:  t.Number(),

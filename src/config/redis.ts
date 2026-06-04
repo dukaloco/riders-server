@@ -47,6 +47,8 @@ export const REDIS_KEYS = {
     onlineRiders: () => `riders:online`,
     tripLock: (tripId: string) => `trip:lock:${tripId}`,
     quote: (quoteId: string) => `quote:${quoteId}`,
+    /** Queued trip:request notifications for a rider who wasn't connected at delivery time. */
+    riderPendingNotif: (riderId: string) => `rider:notify:${riderId}`,
     rateLimit: (ip: string) => `rate_limit:${ip}`,
     otp: (phone: string) => `otp:${phone}`,
     otpAttempts: (phone: string) => `otp:attempts:${phone}`,
@@ -60,7 +62,8 @@ export const TTL = {
     RIDER_STATUS: 3600,
     RATE_LIMIT: 60,
     TRIP_LOCK: 30,
-    QUOTE: 300,   // 5 minutes — matches typical ride-hailing quote window
+    QUOTE: 300,          // 5 minutes — matches typical ride-hailing quote window
+    RIDER_NOTIF: 300,   // 5 minutes — discard undelivered trip:request after this
     OTP: 300,
     OTP_PENDING: 600,
     OTP_ATTEMPTS: 3600,

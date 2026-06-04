@@ -1,30 +1,31 @@
 import { Elysia, t } from "elysia";
 import { redis, REDIS_KEYS, TTL } from "../config/redis";
 import { User } from "../models/User";
-import { jwt } from "@elysiajs/jwt";
-import { env } from "../config/env";
 import { logger } from "../utils/logger";
+import { verifyAccessToken } from "../services/auth.service";
 
 export const socketPlugin = new Elysia({ name: "sockets" })
-    .use(
-        jwt({
-            name: "accessJwt",
-            secret: env.JWT_SECRET,
-        })
-    )
-    .derive(async ({ accessJwt, query }) => {
+    .derive(async ({ query }) => {
         const token = query.token;
         if (!token) return { user: null };
 
-        const payload = await accessJwt.verify(token);
-        if (!payload) return { user: null };
+        try {
+            const payload = verifyAccessToken(token);
+            // Always fetch roles from DB — the stored token may pre-date the
+            // `roles` claim being added to the JWT, so we can't rely on the
+            // JWT payload alone.
+            const dbUser = await User.findById(payload.id).select("roles").lean();
+            if (!dbUser) return { user: null };
 
-        return {
-            user: {
-                id: payload.id as string,
-                roles: payload.roles as string[],
-            },
-        };
+            return {
+                user: {
+                    id:    payload.id,
+                    roles: dbUser.roles as string[],
+                },
+            };
+        } catch {
+            return { user: null };
+        }
     })
     .ws("/ws", {
         body: t.Object({
@@ -34,16 +35,39 @@ export const socketPlugin = new Elysia({ name: "sockets" })
         async open(ws) {
             if (!ws.data.user) return ws.close();
 
-            logger.info(` WS Connected: ${ws.data.user.id} (${ws.data.user.roles.join(',')})`);
+            const { id, roles } = ws.data.user;
+            // Normalise roles — @elysiajs/jwt (jose) may return them in a
+            // different shape than expected when the token was signed with
+            // the jsonwebtoken library.
+            const roleList: string[] = Array.isArray(roles)
+                ? roles
+                : String(roles).split(",").map((r) => r.trim());
 
-            // Store socket availability in Redis
-            await redis.setex(REDIS_KEYS.riderSocket(ws.data.user.id), 3600, "active");
+            try {
+                // Subscribe FIRST — before any code that could throw, so the
+                // rider is always reachable via server.publish even if later
+                // steps fail.
+                ws.subscribe(`user:${id}`);
 
-            // Join personal room
-            ws.subscribe(`user:${ws.data.user.id}`);
+                await redis.setex(REDIS_KEYS.riderSocket(id), 3600, "active");
 
-            if (ws.data.user.roles.includes("rider")) {
-                ws.subscribe("rider:pool");
+                logger.info(` WS Connected: ${id} (${roleList.join(",")})`);
+
+                if (roleList.includes("rider")) {
+                    ws.subscribe("rider:pool");
+
+                    // Flush any queued notifications that were sent while the
+                    // rider was offline (e.g. trip:request during reconnection).
+                    const notifKey = REDIS_KEYS.riderPendingNotif(id);
+                    const pending  = await redis.get(notifKey);
+                    if (pending) {
+                        await redis.del(notifKey);
+                        logger.info(` WS Flushing queued notification to rider ${id}`);
+                        ws.send(pending);
+                    }
+                }
+            } catch (err) {
+                logger.error(`[socket] open handler error for ${id}: ${err}`);
             }
         },
         async message(ws, { type, payload }) {

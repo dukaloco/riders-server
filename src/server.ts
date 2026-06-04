@@ -16,6 +16,7 @@ import { profileRoutes } from "./routes/profile.routes";
 import { riderRoutes } from "./routes/rider.routes";
 import { tripRoutes } from "./routes/trip.routes";
 import { socketPlugin } from "./sockets/socket.plugin";
+import { setServer } from "./sockets/serverRef";
 
 // Background jobs
 import { startRiderCleanupJob } from "./jobs/runRiderCleanup.job";
@@ -148,6 +149,9 @@ const app = new Elysia({ serve: { maxRequestBodySize: 10 * 1024 * 1024 } }) // 1
 
         await connectDB();
         await connectRedis();
+
+        // Register the Bun server instance so HTTP handlers can publish WS events
+        if (app.server) setServer(app.server);
 
         startRiderCleanupJob(60_000);
         startTripTimeoutJob(120_000);
