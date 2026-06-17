@@ -96,17 +96,20 @@ export const socketPlugin = new Elysia({ name: "sockets" })
                     }).exec();
 
                     // Broadcast to anyone tracking this rider
-                    ws.publish(`tracker:${user.id}`, {
-                        type: "rider:location",
-                        payload: {
-                            riderId: user.id,
-                            latitude,
-                            longitude,
-                            heading,
-                            speed,
-                            timestamp: Date.now(),
-                        },
-                    });
+                    ws.publish(
+                        `tracker:${user.id}`,
+                        JSON.stringify({
+                            type: "rider:location",
+                            payload: {
+                                riderId: user.id,
+                                latitude,
+                                longitude,
+                                heading,
+                                speed,
+                                timestamp: Date.now(),
+                            },
+                        }),
+                    );
                     break;
 
                 case "tracker:join":
@@ -120,7 +123,7 @@ export const socketPlugin = new Elysia({ name: "sockets" })
 
                 case "heartbeat":
                     await redis.expire(REDIS_KEYS.riderSocket(user.id), 3600);
-                    ws.send({ type: "heartbeat:ack", payload: { ts: Date.now() } });
+                    ws.send(JSON.stringify({ type: "heartbeat:ack", payload: { ts: Date.now() } }));
                     break;
             }
         },

@@ -85,7 +85,7 @@ export const tripRoutes = new Elysia({ prefix: "/api/trips" })
 
             const trip = await Trip.findById(params.id)
                 .populate("customerId", "firstName lastName phone avatar")
-                .populate("riderId", "firstName lastName phone avatar riderProfile.rating riderProfile.vehicle");
+                .populate("riderId", "firstName lastName phone avatar riderProfile.rating riderProfile.vehicle riderProfile.lastLocation");
 
             if (!trip) throw new NotFoundError("Trip not found.");
 
