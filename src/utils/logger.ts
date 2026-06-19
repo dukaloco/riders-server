@@ -11,7 +11,12 @@ const reset = "\x1b[0m";
 
 const timestamp = (): string => new Date().toISOString();
 
+const IS_PROD = process.env.NODE_ENV === "production";
+
 const log = (level: LogLevel, message: string, ...args: unknown[]): void => {
+    // Suppress debug logs in production — they're for development only.
+    if (IS_PROD && level === "debug") return;
+
     const prefix = `${colours[level]}[${level.toUpperCase()}]${reset} ${timestamp()} -`;
     if (level === "error") {
         console.error(prefix, message, ...args);

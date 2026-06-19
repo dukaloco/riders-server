@@ -150,7 +150,6 @@ export const authRoutes = new Elysia({ prefix: "/api/auth" })
     .post(
         "/admin/login",
         async ({ body }) => {
-            console.log('body',body);
             const identifier = body.identifier.trim().toLowerCase();
             if (!identifier) throw new UnauthorizedError("Invalid credentials.");
 

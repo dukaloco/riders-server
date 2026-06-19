@@ -31,29 +31,41 @@ export const tripRoutes = new Elysia({ prefix: "/api/trips" })
             const { page, limit, skip } = parsePagination(query as any);
             const filter: Record<string, unknown> = {};
             const requestedRole = query.role;
-            console.log(`[trips] user=${user!.id} roles=${user!.roles} requestedRole=${requestedRole}`);
+            // console.log(`[trips] user=${user!.id} roles=${user!.roles} requestedRole=${requestedRole}`);
             if (requestedRole === "customer" && user!.roles.includes("customer")) {
                 filter.customerId = user!.id;
-                console.log(`[trips] Filter set: customerId=${user!.id}`);
+                // console.log(`[trips] Filter set: customerId=${user!.id}`);
             } else if (requestedRole === "rider" && user!.roles.includes("rider")) {
                 filter.riderId = user!.id;
-                console.log(`[trips] Filter set: riderId=${user!.id}`);
+                // console.log(`[trips] Filter set: riderId=${user!.id}`);
             } else if (!user!.roles.includes("admin")) {
                 // fallback when no role param: rider takes precedence
                 if (user!.roles.includes("rider")) {
                     filter.riderId = user!.id;
-                    console.log(`[trips] Fallback filter: riderId=${user!.id}`);
+                    // console.log(`[trips] Fallback filter: riderId=${user!.id}`);
                 }
                 else if (user!.roles.includes("customer")) {
                     filter.customerId = user!.id;
-                    console.log(`[trips] Fallback filter: customerId=${user!.id}`);
+                    // console.log(`[trips] Fallback filter: customerId=${user!.id}`);
                 }
             }
-            console.log(`[trips] Final filter:`, JSON.stringify(filter));
+            // console.log(`[trips] Final filter:`, JSON.stringify(filter));
             // admin with no role param: no filter — sees all trips
             if (query.status) {
                 const statuses = query.status.split(',').map(s => s.trim()).filter(Boolean);
                 filter.status = statuses.length === 1 ? statuses[0] : { $in: statuses };
+            }
+
+            if (query.search?.trim()) {
+                // Escape all regex metacharacters before compiling so that
+                // user input like "((((" or ".*" cannot cause ReDoS.
+                const escaped = query.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const rx = new RegExp(escaped, 'i');
+                (filter as any).$or = [
+                    { 'pickup.address':  rx },
+                    { 'dropoff.address': rx },
+                    { 'recipient.name':  rx },
+                ];
             }
 
             const [trips, total] = await Promise.all([
