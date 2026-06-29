@@ -36,20 +36,23 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
 
         const now = new Date();
 
-        // Build the status filter
-        const statusFilter: Record<string, unknown> = {
-            roles: "rider",
-            "riderProfile.applicationSubmitted": true,
-        };
+        // Build the status filter — base is all riders; each tab narrows it further
+        const statusFilter: Record<string, unknown> = { roles: "rider" };
         if (status === "approved") {
+            statusFilter["riderProfile.applicationSubmitted"] = true;
             statusFilter["riderProfile.isApproved"] = true;
         } else if (status === "rejected") {
+            statusFilter["riderProfile.applicationSubmitted"] = true;
             statusFilter["riderProfile.isApproved"] = false;
             statusFilter["riderProfile.kycRejectionReason"] = { $exists: true, $ne: "" };
         } else if (status === "pending") {
+            statusFilter["riderProfile.applicationSubmitted"] = true;
             statusFilter["riderProfile.isApproved"] = false;
             statusFilter["riderProfile.kycRejectionReason"] = { $exists: false };
+        } else if (status === "incomplete") {
+            statusFilter["riderProfile.applicationSubmitted"] = { $ne: true };
         }
+        // "all" — no extra filter; returns every rider
 
         // Add name/phone search
         const searchFilter = search
@@ -62,9 +65,9 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
 
         const baseSubmitted = { roles: "rider", "riderProfile.applicationSubmitted": true };
 
-        const [applications, total, pendingCount, approvedCount, rejectedCount, allCount] = await Promise.all([
+        const [applications, total, pendingCount, approvedCount, rejectedCount, allCount, incompleteCount] = await Promise.all([
             User.find(searchFilter)
-                .select("firstName lastName phone riderProfile.documents riderProfile.isApproved riderProfile.kycRejectionReason updatedAt")
+                .select("firstName lastName phone riderProfile.documents riderProfile.isApproved riderProfile.kycRejectionReason riderProfile.applicationSubmitted createdAt updatedAt")
                 .sort({ updatedAt: -1 })
                 .skip(skip)
                 .limit(limit)
@@ -73,20 +76,28 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
             User.countDocuments({ ...baseSubmitted, "riderProfile.isApproved": false, "riderProfile.kycRejectionReason": { $exists: false } }),
             User.countDocuments({ ...baseSubmitted, "riderProfile.isApproved": true }),
             User.countDocuments({ ...baseSubmitted, "riderProfile.isApproved": false, "riderProfile.kycRejectionReason": { $exists: true, $ne: "" } }),
-            User.countDocuments(baseSubmitted),
+            User.countDocuments({ roles: "rider" }),
+            User.countDocuments({ roles: "rider", "riderProfile.applicationSubmitted": { $ne: true } }),
         ]);
 
         const mapped = applications.map((u) => {
             const hoursWaiting = Math.floor(
                 (now.getTime() - new Date(u.updatedAt as Date).getTime()) / (1000 * 60 * 60)
             );
+            const isSubmitted = u.riderProfile?.applicationSubmitted === true;
             return {
                 id:            u._id,
                 name:          `${u.firstName} ${u.lastName}`.trim() || "Unknown",
                 phone:         u.phone,
                 documentCount: u.riderProfile?.documents?.length ?? 0,
-                status:        (u.riderProfile?.isApproved ? "approved" : u.riderProfile?.kycRejectionReason ? "rejected" : "pending") as "approved" | "pending" | "rejected",
-                urgency:       (hoursWaiting > 24 ? "urgent" : hoursWaiting > 4 ? "medium" : null) as "urgent" | "medium" | null,
+                status:        (!isSubmitted
+                    ? "incomplete"
+                    : u.riderProfile?.isApproved
+                        ? "approved"
+                        : u.riderProfile?.kycRejectionReason
+                            ? "rejected"
+                            : "pending") as "approved" | "pending" | "rejected" | "incomplete",
+                urgency:       (isSubmitted && hoursWaiting > 24 ? "urgent" : isSubmitted && hoursWaiting > 4 ? "medium" : null) as "urgent" | "medium" | null,
                 submittedAt:   u.updatedAt,
             };
         });
@@ -97,10 +108,11 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
             data: {
                 applications: mapped,
                 counts: {
-                    all:      allCount,
-                    pending:  pendingCount,
-                    approved: approvedCount,
-                    rejected: rejectedCount,
+                    all:        allCount,
+                    pending:    pendingCount,
+                    approved:   approvedCount,
+                    rejected:   rejectedCount,
+                    incomplete: incompleteCount,
                 },
                 pagination: {
                     page,
@@ -131,7 +143,6 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
         const user = await User.findOne({
             _id: id,
             roles: "rider",
-            "riderProfile.applicationSubmitted": true,
         })
             .select("firstName lastName phone email dateOfBirth gender address emergencyContact riderProfile createdAt updatedAt")
             .lean();
@@ -173,7 +184,7 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
                 name:      `${user.firstName} ${user.lastName}`.trim(),
                 kycRef:    `KYC-${String(user._id).slice(-6).toUpperCase()}`,
                 appliedAt: (user.createdAt as Date).toISOString().split("T")[0],
-                status:    user.riderProfile?.isApproved ? "approved" : user.riderProfile?.kycRejectionReason ? "rejected" : "pending",
+                status:    !user.riderProfile?.applicationSubmitted ? "incomplete" : user.riderProfile?.isApproved ? "approved" : user.riderProfile?.kycRejectionReason ? "rejected" : "pending",
                 personal: {
                     fullName:   `${user.firstName} ${user.lastName}`.trim(),
                     phone:      user.phone,
