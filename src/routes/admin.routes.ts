@@ -38,7 +38,7 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
 
         // Build the status filter
         const statusFilter: Record<string, unknown> = {
-            role: "rider",
+            roles: "rider",
             "riderProfile.applicationSubmitted": true,
         };
         if (status === "approved") {
@@ -60,7 +60,7 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
             ] }
             : statusFilter;
 
-        const baseSubmitted = { role: "rider", "riderProfile.applicationSubmitted": true };
+        const baseSubmitted = { roles: "rider", "riderProfile.applicationSubmitted": true };
 
         const [applications, total, pendingCount, approvedCount, rejectedCount, allCount] = await Promise.all([
             User.find(searchFilter)
@@ -130,7 +130,7 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
 
         const user = await User.findOne({
             _id: id,
-            role: "rider",
+            roles: "rider",
             "riderProfile.applicationSubmitted": true,
         })
             .select("firstName lastName phone email dateOfBirth gender address emergencyContact riderProfile createdAt updatedAt")
@@ -218,7 +218,7 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
         }
 
         const result = await User.updateOne(
-            { _id: id, role: "rider", "riderProfile.applicationSubmitted": true },
+            { _id: id, roles: "rider", "riderProfile.applicationSubmitted": true },
             {
                 $set: {
                     "riderProfile.isApproved": true,
@@ -249,7 +249,7 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
         }
 
         const result = await User.updateOne(
-            { _id: id, role: "rider", "riderProfile.applicationSubmitted": true },
+            { _id: id, roles: "rider", "riderProfile.applicationSubmitted": true },
             {
                 $set: {
                     "riderProfile.isApproved": false,
@@ -298,23 +298,23 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
             yesterdayRevenue,
         ] = await Promise.all([
             // Total registered riders
-            User.countDocuments({ role: "rider" }),
+            User.countDocuments({ roles: "rider" }),
 
             // Riders who joined today
             User.countDocuments({
-                role: "rider",
+                roles: "rider",
                 createdAt: { $gte: todayStart },
             }),
 
             // Riders who joined yesterday
             User.countDocuments({
-                role: "rider",
+                roles: "rider",
                 createdAt: { $gte: yesterdayStart, $lte: yesterdayEnd },
             }),
 
             // All pending KYC (submitted, not yet approved)
             User.countDocuments({
-                role: "rider",
+                roles: "rider",
                 "riderProfile.applicationSubmitted": true,
                 "riderProfile.isApproved": false,
             }),
@@ -322,7 +322,7 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
             // Urgent KYC: pending AND last updated more than 24 h ago
             // Sorted oldest-first (most overdue at the top), capped at 20
             User.find({
-                role: "rider",
+                roles: "rider",
                 "riderProfile.applicationSubmitted": true,
                 "riderProfile.isApproved": false,
                 updatedAt: { $lte: urgentThreshold },
@@ -334,7 +334,7 @@ export const adminRoutes = new Elysia({ prefix: "/api/admin" })
 
             // 5 most recently updated submitted applications (any status)
             User.find({
-                role: "rider",
+                roles: "rider",
                 "riderProfile.applicationSubmitted": true,
             })
                 .select("firstName lastName phone riderProfile.documents riderProfile.isApproved updatedAt")
